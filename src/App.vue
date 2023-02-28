@@ -96,7 +96,7 @@
                 {{ t.name }} - USDT
               </dt>
               <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                {{ t.price }}
+                {{ formatPrice(t.price) }}
               </dd>
             </div>
             <div class="w-full border-t border-gray-200"></div>
@@ -170,6 +170,10 @@
 </template>
 
 <script>
+
+import { subscribeToTicker, unSubscribeFromTicker} from './api'
+import {loadAllTicker} from './api'
+
 export default {
   name: "App",
 
@@ -191,12 +195,9 @@ export default {
     };
   },
   mounted: async function () {
-    const f = await fetch(
-      "https://min-api.cryptocompare.com/data/all/coinlist?summary=true"
-    );
-
-    const data = await f.json();
-    for (let key in data.Data) {
+    const allTickersData = await loadAllTicker();
+    console.log("alltD",allTickersData)
+    for (let key in allTickersData.Data) {
       // console.log(key)
       this.allCoins.push(key);
     }
@@ -218,16 +219,19 @@ export default {
     const tickersData = localStorage.getItem("cryptonomikon-list");
     if (tickersData) {
       this.tickers = JSON.parse(tickersData);
+      this.tickers.forEach(ticker=>{
+        subscribeToTicker(ticker.name, (newPrice)=>this.updateTicker(ticker.name, newPrice))
+      });
     }
-    this.tickers.forEach((ticker) => {
-      this.subscribeToUpdates(ticker.name);
-    });
+    // setInterval (this.updateTickers,5000)
   },
 
   computed: {
     startIndex() {
       return (this.page - 1) * 6;
     },
+
+ 
 
     endIndex() {
       return this.page * 6;
@@ -266,34 +270,31 @@ export default {
   },
 
   methods: {
-    subscribeToUpdates(tickerName) {
-      setInterval(async () => {
-        const f = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USDT&api_key=8fb7ea53b7d1118841edff36312ac66ebb8ee48189a16be1edbb8c3e4399c817`
-        );
-        const data = await f.json();
+    formatPrice(price) {
+    
+      if (price === "-") {
+        return price;
+      }
+      return price > 1 ? price.toFixed(2) : price.toPrecision(2);
+    },
 
-        this.tickers.find((t) => t.name === tickerName).price =
-          data.USDT > 1 ? data.USDT.toFixed(2) : data.USDT.toPrecision(2);
-
-        if (this.selectedTicker?.name === tickerName) {
-          this.graph.push(data.USDT);
-        }
-      }, 5000);
-      this.ticker = "";
+   updateTicker(tickerName, price){
+      this.tickers.filter(t=>t.name === tickerName).forEach(t=>{t.price= price})
     },
 
     add() {
       let isInArray = this.tickers.find(
         (ticker) => ticker.name.toLowerCase() === this.ticker.toLowerCase()
       );
-      this.filter = "";
+              
       if (isInArray === undefined) {
         this.elementIsAdded = false;
-
         const currentTicker = { name: this.ticker, price: "-" };
-        this.tickers=[...this.tickers,currentTicker],
-        this.subscribeToUpdates(currentTicker.name);
+        this.tickers=[...this.tickers,currentTicker]
+        this.ticker=""
+        this.filter = "";
+        subscribeToTicker(currentTicker.name, (newPrice)=>this.updateTicker(currentTicker.name, newPrice))
+
       } else {
         this.elementIsAdded = true;
       }
@@ -328,6 +329,7 @@ export default {
       if (this.selectedTicker === tickerToRemove) {
         this.selectedTicker = null;
       }
+      unSubscribeFromTicker(tickerToRemove.name);
     },
   },
   watch: {
